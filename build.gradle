@@ -42,6 +42,23 @@ dependencies {
     compile 'com.intellij:annotations:+@jar'
 }
 
+def getNdkPath() {
+    Properties properties = new Properties()
+    properties.load(project.rootProject.file('local.properties').newDataInputStream())
+    def ndkdir = properties.getProperty('ndk.dir', null)
+    if (ndkdir == null)
+        throw new GradleException('NDK location not found. Define location with "ndk.dir" in the "local.properties" file.')
+    return ndkdir
+}
+
+def getNdkBuildCmd() {
+    def ndkbuild = getNdkPath() + File.separator + "ndk-build"
+    if (System.properties['os.name'].toLowerCase().contains('windows')) {
+        ndkbuild = ndkbuild + ".cmd"
+    }
+    return ndkbuild
+}
+
 android {
     compileSdkVersion 21
     buildToolsVersion "21.1.1"
@@ -64,7 +81,7 @@ android {
 
     // Trigger NDK build on java compilation task.
     task ndkBuild(type: Exec) {
-        commandLine 'ndk-build', '-C', file('src/main/jni/').absolutePath
+        commandLine getNdkBuildCmd(), '-C', file('src/main/jni/').absolutePath
     }
 
     tasks.withType(JavaCompile) {
