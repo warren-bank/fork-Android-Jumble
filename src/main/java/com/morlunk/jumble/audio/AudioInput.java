@@ -21,6 +21,10 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.util.Log;
 
+import android.os.Build;
+import android.media.audiofx.AudioEffect;
+import android.media.audiofx.AcousticEchoCanceler;
+
 import com.morlunk.jumble.BuildConfig;
 import com.morlunk.jumble.Constants;
 import com.morlunk.jumble.exception.AudioInitializationException;
@@ -39,6 +43,10 @@ public class AudioInput implements Runnable {
     private AudioRecord mAudioRecord;
     private final int mFrameSize;
 
+    // echo cancellation
+    private AcousticEchoCanceler aec = null;
+    private boolean useBuiltInAEC = true;
+
     private Thread mRecordThread;
     private boolean mRecording;
 
@@ -54,6 +62,7 @@ public class AudioInput implements Runnable {
             int sampleRate = i == 0 ? targetSampleRate : SAMPLE_RATES[i - 1];
             try {
                 mAudioRecord = setupAudioRecord(sampleRate, audioSource);
+                setupAudioEchoCancel(mAudioRecord);
                 break;
             } catch (AudioInitializationException e) {
                 // Continue iteration, probing for a supported sample rate.
@@ -89,6 +98,23 @@ public class AudioInput implements Runnable {
         }
 
         return audioRecord;
+    }
+
+    private boolean setupAudioEchoCancel(AudioRecord audioRecord) {
+        shutdownAudioEchoCancel();
+
+        if (BuiltInAECIsAvailable()) {
+            aec = AcousticEchoCanceler.create(audioRecord.getAudioSessionId());
+            if (aec == null) {
+                return false;
+            }
+            int ret = aec.setEnabled(useBuiltInAEC);
+            if (ret != AudioEffect.SUCCESS) {
+                return false;
+            }
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -127,6 +153,14 @@ public class AudioInput implements Runnable {
         if(mAudioRecord != null) {
             mAudioRecord.release();
             mAudioRecord = null;
+        }
+        shutdownAudioEchoCancel();
+    }
+
+    private void shutdownAudioEchoCancel() {
+        if (aec != null) {
+            aec.release();
+            aec = null;
         }
     }
 
@@ -177,5 +211,34 @@ public class AudioInput implements Runnable {
 
     public interface AudioInputListener {
         void onAudioInputReceived(short[] frame, int frameSize);
+    }
+
+    private static boolean runningOnJellyBeanOrHigher() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN;
+    }
+
+    private static boolean BuiltInAECIsAvailable() {
+        // AcousticEchoCanceler was added in API level 16 (Jelly Bean).
+        if (!runningOnJellyBeanOrHigher()) {
+            return false;
+        }
+        return AcousticEchoCanceler.isAvailable();
+    }
+
+    public boolean EnableBuiltInAEC(boolean enable) {
+        // AcousticEchoCanceler was added in API level 16 (Jelly Bean).
+        if (!runningOnJellyBeanOrHigher()) {
+            return false;
+        }
+        // Store the AEC state.
+        useBuiltInAEC = enable;
+        // Set AEC state if AEC has already been created.
+        if (aec != null) {
+            int ret = aec.setEnabled(enable);
+            if (ret != AudioEffect.SUCCESS) {
+                return false;
+            }
+        }
+        return true;
     }
 }
